@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>單字保衛戰 - 英文單字掉落遊戲</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Fredoka One', 'Noto Sans TC', sans-serif;
+            user-select: none;
+        }
+        /* 掉落單字發光效果 */
+        .word-glow {
+            text-shadow: 0 0 10px rgba(147, 51, 234, 0.8), 0 0 20px rgba(147, 51, 234, 0.4);
+        }
+        /* 答對消失動畫 */
+        @keyframes successPop {
+            0% { transform: scale(1); opacity: 1; color: #10B981; }
+            100% { transform: scale(1.5); opacity: 0; color: #10B981; }
+        }
+        .animate-success {
+            animation: successPop 0.5s ease-out forwards;
+        }
+        /* 關鍵字閃爍效果 */
+        @keyframes pulseGlow {
+            0%, 100% { text-shadow: 0 0 15px rgba(236, 72, 153, 0.8); }
+            50% { text-shadow: 0 0 5px rgba(236, 72, 153, 0.3); }
+        }
+        .missing-letter {
+            animation: pulseGlow 1.5s infinite;
+        }
+        /* 隱藏滾動條但保留滾動功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col justify-between overflow-hidden">
+
+    <!-- 遊戲頂部狀態列 -->
+    <header class="p-4 bg-gray-900/80 backdrop-blur-md border-b border-gray-800 z-10">
+        <div class="max-w-4xl mx-auto flex justify-between items-center">
+            <!-- 分數 -->
+            <div class="flex items-center space-x-2">
+                <span class="text-gray-400 text-sm md:text-base font-bold">SCORE:</span>
+                <span id="score-val" class="text-2xl md:text-3xl font-extrabold text-yellow-400">0</span>
+            </div>
+            
+            <!-- 遊戲標題 -->
+            <div class="text-center hidden md:block">
+                <h1 class="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500">
+                    WORD DEFENDER 單字保衛戰
+                </h1>
+            </div>
+
+            <!-- 生命值 (愛心) -->
+            <div class="flex items-center space-x-1 md:space-x-2">
+                <span class="text-gray-400 text-sm md:text-base font-bold mr-1">LIFE:</span>
+                <div id="lives-container" class="flex space-x-1">
+                    <!-- 愛心會由 JS 動態生成 -->
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 遊戲核心掉落區 -->
+    <main id="game-stage" class="relative flex-grow w-full overflow-hidden bg-gradient-to-b from-gray-950 via-gray-900 to-slate-900">
+        <!-- 背景星星裝飾 -->
+        <div class="absolute inset-0 opacity-20 pointer-events-none">
+            <div class="absolute top-10 left-10 w-2 h-2 bg-white rounded-full"></div>
+            <div class="absolute top-40 right-20 w-1 h-1 bg-white rounded-full"></div>
+            <div class="absolute top-60 left-1/4 w-1.5 h-1.5 bg-white rounded-full"></div>
+            <div class="absolute top-20 right-1/3 w-2 h-2 bg-white rounded-full"></div>
+            <div class="absolute bottom-20 left-10 w-1 h-1 bg-white rounded-full"></div>
+            <div class="absolute bottom-40 right-10 w-2 h-2 bg-white rounded-full"></div>
+        </div>
+
+        <!-- 掉落的單字容器 -->
+        <div id="falling-word-container" class="absolute inset-0"></div>
+
+        <!-- 底部防禦線 -->
+        <div class="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-pink-500 to-red-500 shadow-[0_-2px_10px_rgba(239,68,68,0.5)]"></div>
+
+        <!-- 開始與結束 覆蓋畫面 (調整為支援排行榜的面板) -->
+        <div id="overlay-screen" class="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col justify-center items-center z-20 transition-all duration-500 p-4">
+            <div class="w-full max-w-md p-6 bg-gray-800/90 rounded-2xl border border-purple-500/30 shadow-2xl overflow-y-auto no-scrollbar max-h-full">
+                
+                <!-- 主標題與說明 -->
+                <div id="intro-view" class="text-center">
+                    <span class="text-5xl md:text-6xl inline-block animate-bounce mb-2">🚀</span>
+                    <h2 id="overlay-title" class="text-3xl md:text-4xl font-extrabold tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-pink-500 to-purple-500">
+                        單字保衛戰
+                    </h2>
+                    <p id="overlay-subtitle" class="text-gray-300 mt-2 text-sm leading-relaxed">
+                        守衛夜空防線！在單字落地前，按下正確的隱藏字母。
+                    </p>
+                    <button id="start-btn" class="mt-6 px-8 py-3 w-full bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-bold text-lg rounded-full shadow-lg shadow-purple-500/30 transform hover:scale-[1.02] active:scale-[0.98] transition-all">
+                        開始遊戲
+                    </button>
+                </div>
+
+                <!-- 遊戲結束/結算 排行榜介面 -->
+                <div id="gameover-view" class="hidden text-center space-y-4">
+                    <h2 class="text-3xl font-black text-red-500 tracking-wide">戰役結束</h2>
+                    
+                    <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700">
+                        <p class="text-sm text-gray-400">本次守衛得分</p>
+                        <p id="final-score" class="text-4xl font-black text-yellow-400">0</p>
+                    </div>
+
+                    <!-- 上傳分數區塊 -->
+                    <div id="score-upload-section" class="space-y-2">
+                        <label class="block text-xs text-gray-400 text-left">登錄名人堂排行榜：</label>
+                        <div class="flex space-x-2">
+                            <input type="text" id="player-name" placeholder="輸入名字 (限8字)" maxlength="8" class="flex-grow px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-purple-500 text-sm">
+                            <button id="submit-score-btn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 font-bold rounded-lg text-sm transition-colors flex items-center justify-center min-w-[70px]">
+                                <span id="submit-btn-text">送出</span>
+                            </button>
+                        </div>
+                        <p id="upload-status" class="text-xs text-left hidden"></p>
+                    </div>
+
+                    <!-- 排行榜展示 -->
+                    <div class="space-y-2 text-left">
+                        <div class="flex justify-between items-center border-b border-gray-700 pb-1">
+                            <h3 class="text-sm font-bold text-purple-400 flex items-center">
+                                <i class="fa-solid fa-trophy text-yellow-500 mr-1.5 animate-pulse"></i> 名人堂 Top 10
+                            </h3>
+                            <button id="refresh-board-btn" class="text-xs text-gray-400 hover:text-white transition-colors">
+                                <i class="fa-solid fa-arrows-rotate mr-1"></i>重新整理
+                            </button>
+                        </div>
+                        <div id="leaderboard-list" class="space-y-1 max-h-48 overflow-y-auto pr-1 text-sm">
+                            <!-- 排行榜動態載入 -->
+                            <div class="text-center text-gray-500 py-4 text-xs">載入中...</div>
+                        </div>
+                    </div>
+
+                    <button id="restart-btn" class="mt-4 px-8 py-3.5 w-full bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-bold text-lg rounded-full shadow-lg shadow-purple-500/30 transform hover:scale-[1.02] active:scale-[0.98] transition-all">
+                        再次挑戰
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- 底部虛擬鍵盤區 -->
+    <footer class="p-3 md:p-5 bg-gray-950 border-t border-gray-800 z-10">
+        <div class="max-w-4xl mx-auto">
+            <div class="grid grid-cols-7 sm:grid-cols-10 gap-1.5 md:gap-2 justify-center">
+                <!-- 由 JavaScript 自動產生 A-Z 的按鍵 -->
+            </div>
+        </div>
+    </footer>
+
+    <!-- 聲學回饋 (Web Audio API) -->
+    <script>
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new AudioCtx();
+        }
+
+        function playSound(type) {
+            if (!audioCtx) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'success') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+                    osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
+                    osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.2); // G5
+                    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.35);
+                } else if (type === 'fail') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(180, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.25);
+                    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.25);
+                } else if (type === 'hurt') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+                    osc.frequency.linearRampToValueAtTime(40, audioCtx.currentTime + 0.4);
+                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+                } else if (type === 'gameover') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                    osc.frequency.linearRampToValueAtTime(100, audioCtx.currentTime + 0.8);
+                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.8);
+                }
+            } catch (e) {
+                console.log("Audio Error:", e);
+            }
+        }
+    </script>
+
+    <!-- 遊戲核心與排行榜串接 -->
+    <script>
+        // ==========================================
+        // 【重要設定】請在此填入您的 GAS 部署 Web App URL
+        // ==========================================
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzgxDvnwQRi6p8JrqdrYIlRnSHQ8Hg4XNxmN5vpr47Kkuq9FlXoiYziCVZfRHs7dNCV/exec"; 
+
+        const WORD_BANK = [
+            "APPLE", "BANANA", "TIGER", "ZEBRA", "ORANGE", 
+            "MONKEY", "RABBIT", "GUITAR", "FLOWER", "SCHOOL",
+            "PENCIL", "FATHER", "MOTHER", "YELLOW", "CHERRY"
+        ];
+
+        let score = 0;
+        let lives = 3;
+        let isPlaying = false;
+        let currentWordData = null;
+        let animationFrameId = null;
+
+        // UI 綁定
+        const scoreVal = document.getElementById('score-val');
+        const livesContainer = document.getElementById('lives-container');
+        const gameStage = document.getElementById('game-stage');
+        const fallingWordContainer = document.getElementById('falling-word-container');
+        const overlayScreen = document.getElementById('overlay-screen');
+        const introView = document.getElementById('intro-view');
+        const gameoverView = document.getElementById('gameover-view');
+        
+        const finalScore = document.getElementById('final-score');
+        const playerNameInput = document.getElementById('player-name');
+        const submitScoreBtn = document.getElementById('submit-score-btn');
+        const submitBtnText = document.getElementById('submit-btn-text');
+        const uploadStatus = document.getElementById('upload-status');
+        const leaderboardList = document.getElementById('leaderboard-list');
+        const refreshBoardBtn = document.getElementById('refresh-board-btn');
+        
+        const startBtn = document.getElementById('start-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const keyboardContainer = document.querySelector('footer div.grid');
+
+        // 生成 A-Z 鍵盤
+        const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+        function buildKeyboard() {
+            keyboardContainer.innerHTML = '';
+            alphabet.forEach(letter => {
+                const button = document.createElement('button');
+                button.id = `key-${letter}`;
+                button.textContent = letter;
+                button.className = "py-2.5 sm:py-3.5 bg-gray-800 hover:bg-gray-700 active:bg-gray-600 text-white font-extrabold text-base md:text-xl rounded-lg shadow-md border-b-4 border-gray-950 transition-all duration-100 transform active:translate-y-1 active:border-b-0 flex items-center justify-center focus:outline-none";
+                button.addEventListener('click', () => handleInput(letter));
+                keyboardContainer.appendChild(button);
+            });
+        }
+
+        function updateLivesUI() {
+            livesContainer.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const heart = document.createElement('i');
+                if (i < lives) {
+                    heart.className = "fa-solid fa-heart text-red-500 text-xl md:text-2xl transition-all duration-300 filter drop-shadow-[0_0_5px_rgba(239,68,68,0.5)]";
+                } else {
+                    heart.className = "fa-solid fa-heart-broken text-gray-600 text-xl md:text-2xl transition-all duration-300 scale-95";
+                }
+                livesContainer.appendChild(heart);
+            }
+        }
+
+        function spawnWord() {
+            fallingWordContainer.innerHTML = '';
+            const randomWord = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
+            const missingIndex = Math.floor(Math.random() * randomWord.length);
+            const missingChar = randomWord[missingIndex];
+
+            // 隨分數提升微幅加速
+            const baseSpeed = 1.0;
+            const speedLimit = 3.5;
+            const speed = Math.min(baseSpeed + (score * 0.1), speedLimit);
+
+            const wordEl = document.createElement('div');
+            wordEl.className = "absolute text-3xl sm:text-5xl font-black tracking-widest text-white py-1 px-4 rounded-xl flex items-center justify-center transition-transform duration-100 cursor-default";
+            
+            const stageWidth = gameStage.clientWidth;
+            const wordWidthEstimated = randomWord.length * 30;
+            const maxX = Math.max(10, stageWidth - wordWidthEstimated - 40);
+            const startX = Math.floor(Math.random() * maxX);
+            wordEl.style.left = `${startX}px`;
+            wordEl.style.top = `0px`;
+
+            let htmlContent = '';
+            for (let i = 0; i < randomWord.length; i++) {
+                if (i === missingIndex) {
+                    htmlContent += `<span class="missing-letter text-pink-500 font-black border-b-4 border-pink-500 mx-1 px-1">_</span>`;
+                } else {
+                    htmlContent += `<span class="text-gray-100 word-glow">${randomWord[i]}</span>`;
+                }
+            }
+            wordEl.innerHTML = htmlContent;
+            fallingWordContainer.appendChild(wordEl);
+
+            currentWordData = {
+                text: randomWord,
+                missingIndex: missingIndex,
+                missingChar: missingChar,
+                currentY: 0,
+                speed: speed,
+                element: wordEl
+            };
+        }
+
+        function gameLoop() {
+            if (!isPlaying) return;
+            if (currentWordData) {
+                currentWordData.currentY += currentWordData.speed;
+                currentWordData.element.style.top = `${currentWordData.currentY}px`;
+
+                const stageHeight = gameStage.clientHeight;
+                const limitY = stageHeight - currentWordData.element.clientHeight - 10;
+
+                if (currentWordData.currentY >= limitY) {
+                    handleWordMiss();
+                }
+            }
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function handleWordMiss() {
+            lives--;
+            updateLivesUI();
+            playSound('hurt');
+
+            gameStage.classList.add('bg-red-900/30');
+            setTimeout(() => gameStage.classList.remove('bg-red-900/30'), 250);
+
+            if (lives <= 0) {
+                endGame();
+            } else {
+                spawnWord();
+            }
+        }
+
+        function handleInput(char) {
+            if (!isPlaying || !currentWordData) return;
+
+            const targetChar = currentWordData.missingChar.toUpperCase();
+            const inputChar = char.toUpperCase();
+            const keyBtn = document.getElementById(`key-${inputChar}`);
+
+            if (inputChar === targetChar) {
+                score += 10;
+                scoreVal.textContent = score;
+                playSound('success');
+
+                const missingSpan = currentWordData.element.querySelector('.missing-letter');
+                if (missingSpan) {
+                    missingSpan.textContent = targetChar;
+                    missingSpan.className = "text-emerald-400 font-extrabold mx-1";
+                }
+                
+                const tempEl = currentWordData.element;
+                currentWordData = null; 
+                tempEl.classList.add('animate-success');
+                
+                if (keyBtn) {
+                    keyBtn.classList.remove('bg-gray-800', 'hover:bg-gray-700');
+                    keyBtn.classList.add('bg-emerald-600', 'border-emerald-800');
+                    setTimeout(() => {
+                        keyBtn.classList.remove('bg-emerald-600', 'border-emerald-800');
+                        keyBtn.classList.add('bg-gray-800', 'hover:bg-gray-700');
+                    }, 300);
+                }
+
+                setTimeout(() => {
+                    if (isPlaying) spawnWord();
+                }, 500);
+
+            } else {
+                playSound('fail');
+                if (keyBtn) {
+                    keyBtn.classList.remove('bg-gray-800', 'hover:bg-gray-700');
+                    keyBtn.classList.add('bg-red-600', 'border-red-800');
+                    setTimeout(() => {
+                        keyBtn.classList.remove('bg-red-600', 'border-red-800');
+                        keyBtn.classList.add('bg-gray-800', 'hover:bg-gray-700');
+                    }, 250);
+                }
+            }
+        }
+
+        function startGame() {
+            initAudio();
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            score = 0;
+            lives = 3;
+            isPlaying = true;
+            scoreVal.textContent = score;
+            
+            updateLivesUI();
+            overlayScreen.classList.add('opacity-0', 'pointer-events-none');
+            
+            spawnWord();
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            gameLoop();
+        }
+
+        function endGame() {
+            isPlaying = false;
+            playSound('gameover');
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+
+            fallingWordContainer.innerHTML = '';
+            currentWordData = null;
+
+            // 顯示結算畫面
+            finalScore.textContent = score;
+            
+            // 重置輸入與狀態
+            playerNameInput.value = "";
+            submitScoreBtn.disabled = false;
+            submitScoreBtn.className = "px-4 py-2 bg-emerald-600 hover:bg-emerald-500 font-bold rounded-lg text-sm transition-colors min-w-[70px]";
+            submitBtnText.textContent = "送出";
+            uploadStatus.classList.add('hidden');
+
+            introView.classList.add('hidden');
+            gameoverView.classList.remove('hidden');
+            overlayScreen.classList.remove('opacity-0', 'pointer-events-none');
+
+            // 自動加載排行榜
+            loadLeaderboard();
+        }
+
+        // ==========================================
+        // 【排行榜邏輯】支援 GAS 與 LocalStorage 自動雙軌
+        // ==========================================
+        
+        // 判斷是否設定了真實的 GAS URL
+        function isGasConfigured() {
+            return GAS_API_URL && GAS_API_URL !== "YOUR_GAS_WEB_APP_URL";
+        }
+
+        // 讀取排行榜
+        async function loadLeaderboard() {
+            leaderboardList.innerHTML = `<div class="text-center text-gray-400 py-4 text-xs"><i class="fa-solid fa-spinner animate-spin mr-1"></i>讀取中...</div>`;
+            
+            if (isGasConfigured()) {
+                // 使用 GAS 線上讀取
+                try {
+                    const response = await fetch(`${GAS_API_URL}?action=get`);
+                    if (!response.ok) throw new Error("網路錯誤");
+                    const data = await response.json();
+                    renderLeaderboard(data);
+                } catch (error) {
+                    console.error("無法載入線上排行榜，切換為本地排行榜:", error);
+                    loadLocalLeaderboard("線上連線失敗，目前顯示本地紀錄");
+                }
+            } else {
+                // 使用 LocalStorage
+                loadLocalLeaderboard("使用本地儲存 (未設定 GAS URL)");
+            }
+        }
+
+        // 讀取本地排行榜
+        function loadLocalLeaderboard(statusMsg) {
+            const localData = JSON.parse(localStorage.getItem('word_defender_scores') || "[]");
+            // 排序並取 Top 10
+            localData.sort((a, b) => b.score - a.score);
+            renderLeaderboard(localData.slice(0, 10));
+            
+            if (statusMsg) {
+                uploadStatus.textContent = statusMsg;
+                uploadStatus.className = "text-xs text-left text-yellow-500 block";
+            }
+        }
+
+        // 渲染排行榜 UI
+        function renderLeaderboard(data) {
+            if (!data || data.length === 0) {
+                leaderboardList.innerHTML = `<div class="text-center text-gray-500 py-4 text-xs">尚無紀錄，快來搶佔第一名！</div>`;
+                return;
+            }
+
+            leaderboardList.innerHTML = data.map((item, index) => {
+                let medal = "";
+                let rankClass = "text-gray-400";
+                if (index === 0) { medal = "🥇 "; rankClass = "text-yellow-400 font-black"; }
+                else if (index === 1) { medal = "🥈 "; rankClass = "text-slate-300 font-black"; }
+                else if (index === 2) { medal = "🥉 "; rankClass = "text-amber-600 font-black"; }
+                else { medal = `${index + 1}. `; }
+
+                // 格式化日期
+                let dateStr = "";
+                if (item.date) {
+                    const d = new Date(item.date);
+                    dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+                }
+
+                return `
+                    <div class="flex justify-between items-center py-1.5 px-2 rounded hover:bg-gray-700/50 transition-colors">
+                        <span class="font-semibold ${rankClass}">${medal}${escapeHTML(item.name)}</span>
+                        <div class="space-x-3 text-xs">
+                            <span class="text-yellow-400 font-bold">${item.score} 分</span>
+                            <span class="text-gray-500">${dateStr}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 送出分數
+        async function submitScore() {
+            const name = playerNameInput.value.trim();
+            if (!name) {
+                showUploadMessage("請輸入您的名字！", "text-red-400");
+                return;
+            }
+
+            // 鎖定按鈕防止重複發送
+            submitScoreBtn.disabled = true;
+            submitBtnText.textContent = "傳送...";
+            submitScoreBtn.className = "px-4 py-2 bg-gray-600 text-gray-400 font-bold rounded-lg text-sm cursor-not-allowed min-w-[70px]";
+
+            const payload = {
+                name: name,
+                score: score,
+                date: new Date().toISOString()
+            };
+
+            if (isGasConfigured()) {
+                // 發送至 GAS (使用 URLSearchParams 避免 CORS preflight 限制)
+                try {
+                    const params = new URLSearchParams();
+                    params.append('action', 'add');
+                    params.append('name', payload.name);
+                    params.append('score', payload.score);
+
+                    const response = await fetch(GAS_API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: params.toString()
+                    });
+
+                    if (!response.ok) throw new Error("伺服器回應異常");
+                    const data = await response.json();
+                    
+                    showUploadMessage("上傳雲端成功！🎉", "text-emerald-400");
+                    renderLeaderboard(data); // 重新渲染最新的 top 10
+                } catch (error) {
+                    console.error("雲端上傳失敗，改存至本地:", error);
+                    saveToLocal(payload);
+                    showUploadMessage("雲端失敗，已自動存於本地裝置。", "text-yellow-400");
+                    loadLocalLeaderboard();
+                }
+            } else {
+                // 直接存本地
+                saveToLocal(payload);
+                showUploadMessage("本地紀錄保存成功！", "text-emerald-400");
+                loadLocalLeaderboard();
+            }
+        }
+
+        // 存檔至本地 LocalStorage
+        function saveToLocal(payload) {
+            const localData = JSON.parse(localStorage.getItem('word_defender_scores') || "[]");
+            localData.push(payload);
+            localStorage.setItem('word_defender_scores', JSON.stringify(localData));
+        }
+
+        // 輔助顯示上傳狀態訊息
+        function showUploadMessage(msg, tailwindColorClass) {
+            uploadStatus.textContent = msg;
+            uploadStatus.className = `text-xs text-left ${tailwindColorClass} block`;
+        }
+
+        // 安全防護
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, 
+                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+            );
+        }
+
+        // 事件監聽
+        startBtn.addEventListener('click', startGame);
+        restartBtn.addEventListener('click', startGame);
+        submitScoreBtn.addEventListener('click', submitScore);
+        refreshBoardBtn.addEventListener('click', loadLeaderboard);
+
+        // 實體鍵盤監聽
+        window.addEventListener('keydown', (e) => {
+            // 如果玩家正在輸入名字，不要觸發遊戲鍵盤事件
+            if (document.activeElement === playerNameInput) {
+                if (e.key === 'Enter') {
+                    submitScore();
+                }
+                return;
+            }
+
+            if (!isPlaying) {
+                if (e.key === 'Enter') {
+                    startGame();
+                }
+                return;
+            }
+
+            const pressedKey = e.key.toUpperCase();
+            if (pressedKey.length === 1 && pressedKey >= 'A' && pressedKey <= 'Z') {
+                handleInput(pressedKey);
+            }
+        });
+
+        // 初始化
+        buildKeyboard();
+    </script>
+</body>
+</html>
